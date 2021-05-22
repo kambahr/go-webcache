@@ -17,15 +17,13 @@ var cacheDirty bool
 
 // Cache type holds the global required attibutes.
 type Cache struct {
-	RootPhysicalPath string
-	CacheDuration    time.Duration
+	CacheDuration time.Duration
 }
 
 // NewWebCache creates a new instance of webCache.
 // Full root physical path of the website, default cache duration
-func NewWebCache(rootPhysicalPath string, d time.Duration) *Cache {
+func NewWebCache(d time.Duration) *Cache {
 	var c Cache
-	c.RootPhysicalPath = rootPhysicalPath
 	c.CacheDuration = d
 	return &c
 }
@@ -68,7 +66,7 @@ lblAgain:
 		}
 	}
 
-	time.Sleep(750 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 
 	goto lblAgain
 }
@@ -117,6 +115,11 @@ func (c *Cache) AddItem(uriPath string, content []byte, d time.Duration) {
 		go c.manageCache()
 		cacheDirty = true
 	}
+}
+
+// AddItem adds an item to the global array.
+func (c *Cache) AddItemDefault(uriPath string, content []byte) {
+	c.AddItem(uriPath, content, c.CacheDuration)
 }
 
 // RemoveItem removes an item from the global array.
