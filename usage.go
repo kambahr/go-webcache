@@ -38,7 +38,7 @@ func main() {
 	//------------------------------------------------------------
 	// Initialize the webcache object.
 	// Pass the full root physical path, and the cache duration.
-	mWebcache = webcache.NewWebCache(mInstallPath, cacheDuration)
+	mWebcache = webcache.NewWebCache(cacheDuration)
 	//------------------------------------------------------------
 
 	http.HandleFunc("/", handleMyPage)
