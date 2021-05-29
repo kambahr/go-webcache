@@ -45,8 +45,7 @@ func removeItem(idx int) {
 }
 
 // manageCache goes through the global cache array and removes the
-// expired items -- every 5 seconds. A goto jump is used to avoid recursion,
-// which could lead to memory isues for long running processes.
+// expired items. A goto jump is used to avoid recursion.
 func (c *Cache) manageCache() {
 lblAgain:
 	for i := 0; i < len(mCacheArry); i++ {
