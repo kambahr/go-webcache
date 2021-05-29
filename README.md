@@ -6,7 +6,7 @@ Cache html, image, css, javascript, and other files.
 Set the time duration globally and/or for each file.
 
 ### Run the test sample
-Build the project and navigate to http:&#47;&#47;localhost:8005/mypage.htm.
+Build the test project and navigate to http:&#47;&#47;localhost:8005/mypage.htm.
 
 #### Run the test sample outside of $GOPATH
 
