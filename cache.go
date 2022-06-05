@@ -9,6 +9,7 @@ type CacheItem struct {
 	Path            string
 	Content         []byte
 	Expires         time.Duration
+	UserData        map[string]interface{}
 	DateTimeCreated time.Time
 }
 
@@ -89,6 +90,18 @@ func (c *Cache) Exists(uriPath string) bool {
 	return false
 }
 
+// GetItemDetailed returns a selected item from the global array.
+func (*Cache) GetItemDetailed(uriPath string) CacheItem {
+	var b CacheItem
+	for i := 0; i < len(mCacheArry); i++ {
+		if mCacheArry[i].Path == uriPath {
+			return mCacheArry[i]
+		}
+	}
+
+	return b
+}
+
 // GetItem returns a selected item from the global array.
 func (*Cache) GetItem(uriPath string) []byte {
 	var b []byte
@@ -99,6 +112,23 @@ func (*Cache) GetItem(uriPath string) []byte {
 	}
 
 	return b
+}
+
+// AddItemDetailed add a cache item to the global list with the
+// added user data.
+func (c *Cache) AddItemDetailed(uriPath string, content []byte, d time.Duration, userData map[string]interface{}) {
+	var cx CacheItem
+	cx.Path = uriPath
+	cx.Content = content
+	cx.DateTimeCreated = time.Now()
+	cx.Expires = d
+	cx.UserData = userData
+	mCacheArry = append(mCacheArry, cx)
+
+	if !cacheDirty {
+		go c.manageCache()
+		cacheDirty = true
+	}
 }
 
 // AddItem adds an item to the global array.
