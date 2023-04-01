@@ -1,6 +1,7 @@
 package webcache
 
 import (
+	"strings"
 	"time"
 )
 
@@ -75,8 +76,23 @@ lblAgain:
 //               public functions               '
 //-----------------------------------------------
 
+// ClearAll removes all cache.
+func (c *Cache) ClearAll() {
+	mCacheArry = make([]CacheItem, 0)
+}
+
+// Clears an items from the global bache.
+func (c *Cache) Clear(path string) {
+	for i := 0; i < len(mCacheArry); i++ {
+		if strings.HasPrefix(mCacheArry[i].Path, path) {
+			removeItem(i)
+			return
+		}
+	}
+}
+
 // GetCacheList makes the mCacheArry visible.
-func (*Cache) GetCacheList(uriPath string) []CacheItem {
+func (c *Cache) GetCacheList(uriPath string) []CacheItem {
 	return mCacheArry
 }
 
@@ -91,7 +107,7 @@ func (c *Cache) Exists(uriPath string) bool {
 }
 
 // GetItemDetailed returns a selected item from the global array.
-func (*Cache) GetItemDetailed(uriPath string) CacheItem {
+func (c *Cache) GetItemDetailed(uriPath string) CacheItem {
 	var b CacheItem
 	for i := 0; i < len(mCacheArry); i++ {
 		if mCacheArry[i].Path == uriPath {
@@ -103,7 +119,7 @@ func (*Cache) GetItemDetailed(uriPath string) CacheItem {
 }
 
 // GetItem returns a selected item from the global array.
-func (*Cache) GetItem(uriPath string) []byte {
+func (c *Cache) GetItem(uriPath string) []byte {
 	var b []byte
 	for i := 0; i < len(mCacheArry); i++ {
 		if mCacheArry[i].Path == uriPath {
@@ -152,7 +168,7 @@ func (c *Cache) AddItemDefault(uriPath string, content []byte) {
 }
 
 // RemoveItem removes an item from the global array.
-func (*Cache) RemoveItem(p string) {
+func (c *Cache) RemoveItem(p string) {
 	for i := 0; i < len(mCacheArry); i++ {
 		if mCacheArry[i].Path == p {
 			remove(mCacheArry, i)
