@@ -1,21 +1,16 @@
-# Web Cache Manager for Golang websites
+# WebCache v2.0.0
 
-## Webcache is a simple, lightweight Cache Manager for Golang websites.
+A high-performance, thread-safe LRU (Least Recently Used) cache for Go applications. 
 
-Cache html, image, css, javascript, and other files.
-Set the time duration globally and/or for each file.
+## Overview
+WebCache is designed to handle web assets and byte arrays efficiently. Version 2.0 represents a complete architectural rewrite, moving from a slice-based approach to a **Map + Doubly Linked List** structure.
 
-### Run the test sample
-Build the test project and navigate to http:&#47;&#47;localhost:8005/mypage.htm.
+### Key Features
+* **$O(1)$ Time Complexity:** Instant lookups regardless of cache size.
+* **LRU Eviction:** Automatically drops the least accessed items when the limit is reached.
+* **Thread-Safe:** Safe for concurrent use in high-traffic web servers via `sync.RWMutex`.
+* **Automatic Expiration:** A background janitor periodically cleans up stale entries.
 
-#### Run the test sample outside of $GOPATH
-
-- Start a shell window
-- cd &lt;to any directory (other than $GOPATH)&gt;
-- git clone https:&#47;&#47;github.com&#47;kambahr/go-webcache.git && cd go-webcache/test
-- go mod init go-webcache/test
-- go mod tidy
-- go mod vendor
-- go build -o cacheDemo && ./cacheDemo
-
-Navigate to http:&#47;&#47;localhost:8005/mypage.html.
+## Installation
+```bash
+go get [github.com/yourusername/webcache](https://github.com/yourusername/webcache)
