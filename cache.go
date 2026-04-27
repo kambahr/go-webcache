@@ -1,178 +1,141 @@
+// Copyright (C) 2022-2026 Kamiar Bahri.
+// Use of this source code is governed by
+// Boost Software License - Version 1.0
 package webcache
 
 import (
-	"strings"
+	"container/list"
+	"sync"
 	"time"
 )
 
-// CacheItem holds the attributes of a request file to be
+// CacheItem holds the data and metadata for a cached entry.
 type CacheItem struct {
-	Path            string
-	Content         []byte
-	Expires         time.Duration
-	UserData        map[string]interface{}
-	DateTimeCreated time.Time
+	Path      string
+	Content   []byte
+	ExpiresAt time.Time
+	UserData  map[string]any
 }
 
-var mCacheArry []CacheItem
-var cacheDirty bool
+// entry links the list node back to the map key for efficient eviction.
+type entry struct {
+	key   string
+	value *CacheItem
+}
 
-// Cache type holds the global required attibutes.
+// Cache manages the LRU items with full thread safety.
 type Cache struct {
-	CacheDuration time.Duration
+	mu             sync.RWMutex
+	maxEntries     int
+	defaultTimeout time.Duration
+	ll             *list.List
+	cache          map[string]*list.Element
 }
 
-// NewWebCache creates a new instance of webCache.
-// Full root physical path of the website, default cache duration
-func NewWebCache(d time.Duration) *Cache {
-	var c Cache
-	c.CacheDuration = d
-	return &c
+// NewWebCache creates a new LRU cache instance.
+// d: Default expiration duration.
+// maxEntries: Max items to keep (0 for unlimited).
+func NewWebCache(d time.Duration, maxEntries int) *Cache {
+	c := &Cache{
+		maxEntries:     maxEntries,
+		defaultTimeout: d,
+		ll:             list.New(),
+		cache:          make(map[string]*list.Element),
+	}
+	go c.janitor()
+	return c
 }
 
-// remove drops an item from the cache list.
-func remove(s []CacheItem, i int) []CacheItem {
-	s[len(s)-1], s[i] = s[i], s[len(s)-1]
-	return s[:len(s)-1]
-}
+// GetItem retrieves content and marks it as "Recently Used".
+func (c *Cache) GetItem(path string) ([]byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-// removeItem removes an item from the global cache array by its index position.
-func removeItem(idx int) {
-	for i := 0; i < len(mCacheArry); i++ {
-		if i == idx {
-			mCacheArry = remove(mCacheArry, i)
-			return
+	if ee, ok := c.cache[path]; ok {
+		if time.Now().After(ee.Value.(*entry).value.ExpiresAt) {
+			c.removeElement(ee)
+			return nil, false
 		}
+		c.ll.MoveToFront(ee)
+		return ee.Value.(*entry).value.Content, true
+	}
+	return nil, false
+}
+
+// AddItem adds or updates an item and enforces the LRU limit.
+func (c *Cache) AddItem(path string, content []byte, d time.Duration) {
+	if d <= 0 {
+		d = c.defaultTimeout
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if ee, ok := c.cache[path]; ok {
+		c.ll.MoveToFront(ee)
+		ee.Value.(*entry).value.Content = content
+		ee.Value.(*entry).value.ExpiresAt = time.Now().Add(d)
+		return
+	}
+
+	item := &CacheItem{
+		Path:      path,
+		Content:   content,
+		ExpiresAt: time.Now().Add(d),
+	}
+	ele := c.ll.PushFront(&entry{path, item})
+	c.cache[path] = ele
+
+	if c.maxEntries > 0 && c.ll.Len() > c.maxEntries {
+		c.removeOldest()
 	}
 }
 
-// manageCache goes through the global cache array and removes the
-// expired items. A goto jump is used to avoid recursion.
-func (c *Cache) manageCache() {
-lblAgain:
-	for i := 0; i < len(mCacheArry); i++ {
-
-		elapsed := time.Since(mCacheArry[i].DateTimeCreated)
-
-		// Apply the value set specifically for this file - first.
-		if elapsed >= mCacheArry[i].Expires {
-			removeItem(i)
-			break
-		}
-
-		// Apply the global cache duration,
-		if elapsed >= c.CacheDuration {
-			removeItem(i)
-			break
-		}
-	}
-
-	time.Sleep(800 * time.Millisecond)
-
-	goto lblAgain
+// AddItemDefault adds an item using the default cache duration.
+func (c *Cache) AddItemDefault(path string, content []byte) {
+	c.AddItem(path, content, c.defaultTimeout)
 }
 
-//-----------------------------------------------
-//               public functions               '
-//-----------------------------------------------
+// RemoveItem deletes a specific item by its path.
+func (c *Cache) RemoveItem(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ee, ok := c.cache[path]; ok {
+		c.removeElement(ee)
+	}
+}
 
-// ClearAll removes all cache.
+// ClearAll wipes the entire cache.
 func (c *Cache) ClearAll() {
-	mCacheArry = make([]CacheItem, 0)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ll = list.New()
+	c.cache = make(map[string]*list.Element)
 }
 
-// Clears an items from the global bache.
-func (c *Cache) Clear(path string) {
-	for i := 0; i < len(mCacheArry); i++ {
-		if strings.HasPrefix(mCacheArry[i].Path, path) {
-			removeItem(i)
-			return
+func (c *Cache) removeOldest() {
+	ele := c.ll.Back()
+	if ele != nil {
+		c.removeElement(ele)
+	}
+}
+
+func (c *Cache) removeElement(e *list.Element) {
+	c.ll.Remove(e)
+	kv := e.Value.(*entry)
+	delete(c.cache, kv.key)
+}
+
+func (c *Cache) janitor() {
+	ticker := time.NewTicker(time.Minute)
+	for range ticker.C {
+		c.mu.Lock()
+		now := time.Now()
+		for _, ele := range c.cache {
+			if now.After(ele.Value.(*entry).value.ExpiresAt) {
+				c.removeElement(ele)
+			}
 		}
-	}
-}
-
-// GetCacheList makes the mCacheArry visible.
-func (c *Cache) GetCacheList(uriPath string) []CacheItem {
-	return mCacheArry
-}
-
-// Exists tells if an item exists.
-func (c *Cache) Exists(uriPath string) bool {
-	for i := 0; i < len(mCacheArry); i++ {
-		if mCacheArry[i].Path == uriPath {
-			return true
-		}
-	}
-	return false
-}
-
-// GetItemDetailed returns a selected item from the global array.
-func (c *Cache) GetItemDetailed(uriPath string) CacheItem {
-	var b CacheItem
-	for i := 0; i < len(mCacheArry); i++ {
-		if mCacheArry[i].Path == uriPath {
-			return mCacheArry[i]
-		}
-	}
-
-	return b
-}
-
-// GetItem returns a selected item from the global array.
-func (c *Cache) GetItem(uriPath string) []byte {
-	var b []byte
-	for i := 0; i < len(mCacheArry); i++ {
-		if mCacheArry[i].Path == uriPath {
-			return mCacheArry[i].Content
-		}
-	}
-
-	return b
-}
-
-// AddItemDetailed add a cache item to the global list with the
-// added user data.
-func (c *Cache) AddItemDetailed(uriPath string, content []byte, d time.Duration, userData map[string]interface{}) {
-	var cx CacheItem
-	cx.Path = uriPath
-	cx.Content = content
-	cx.DateTimeCreated = time.Now()
-	cx.Expires = d
-	cx.UserData = userData
-	mCacheArry = append(mCacheArry, cx)
-
-	if !cacheDirty {
-		go c.manageCache()
-		cacheDirty = true
-	}
-}
-
-// AddItem adds an item to the global array.
-func (c *Cache) AddItem(uriPath string, content []byte, d time.Duration) {
-	var cx CacheItem
-	cx.Path = uriPath
-	cx.Content = content
-	cx.DateTimeCreated = time.Now()
-	cx.Expires = d
-	mCacheArry = append(mCacheArry, cx)
-
-	if !cacheDirty {
-		go c.manageCache()
-		cacheDirty = true
-	}
-}
-
-// AddItem adds an item to the global array.
-func (c *Cache) AddItemDefault(uriPath string, content []byte) {
-	c.AddItem(uriPath, content, c.CacheDuration)
-}
-
-// RemoveItem removes an item from the global array.
-func (c *Cache) RemoveItem(p string) {
-	for i := 0; i < len(mCacheArry); i++ {
-		if mCacheArry[i].Path == p {
-			remove(mCacheArry, i)
-			break
-		}
+		c.mu.Unlock()
 	}
 }
