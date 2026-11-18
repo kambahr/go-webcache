@@ -35,9 +35,13 @@ type Cache struct {
 // NewWebCache creates a new LRU cache instance.
 // d: Default expiration duration.
 // maxEntries: Max items to keep (0 for unlimited).
-func NewWebCache(d time.Duration, maxEntries int) *Cache {
+func NewWebCache(d time.Duration, maxEntries ...int) *Cache {
+	maxEntriesx := 0
+	if len(maxEntries) > 0 {
+		maxEntriesx = maxEntries[0]
+	}
 	c := &Cache{
-		maxEntries:     maxEntries,
+		maxEntries:     maxEntriesx,
 		defaultTimeout: d,
 		ll:             list.New(),
 		cache:          make(map[string]*list.Element),
@@ -62,8 +66,30 @@ func (c *Cache) GetItem(path string) ([]byte, bool) {
 	return nil, false
 }
 
+// GetItemDetailed retrieves the full CacheItem and marks it as "Recently Used".
+func (c *Cache) GetItemDetailed(path string) (CacheItem, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if ee, ok := c.cache[path]; ok {
+		item := ee.Value.(*entry).value
+		if time.Now().After(item.ExpiresAt) {
+			c.removeElement(ee)
+			return CacheItem{}, false
+		}
+		c.ll.MoveToFront(ee)
+		return *item, true
+	}
+	return CacheItem{}, false
+}
+
 // AddItem adds or updates an item and enforces the LRU limit.
 func (c *Cache) AddItem(path string, content []byte, d time.Duration) {
+	c.AddItemDetailed(path, content, d, nil)
+}
+
+// AddItemDetailed adds or updates an item with custom user metadata and enforces the LRU limit.
+func (c *Cache) AddItemDetailed(uriPath string, content []byte, d time.Duration, userData map[string]any) {
 	if d <= 0 {
 		d = c.defaultTimeout
 	}
@@ -71,20 +97,25 @@ func (c *Cache) AddItem(path string, content []byte, d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if ee, ok := c.cache[path]; ok {
+	if ee, ok := c.cache[uriPath]; ok {
 		c.ll.MoveToFront(ee)
-		ee.Value.(*entry).value.Content = content
-		ee.Value.(*entry).value.ExpiresAt = time.Now().Add(d)
+		item := ee.Value.(*entry).value
+		item.Content = content
+		item.ExpiresAt = time.Now().Add(d)
+		if userData != nil {
+			item.UserData = userData
+		}
 		return
 	}
 
 	item := &CacheItem{
-		Path:      path,
+		Path:      uriPath,
 		Content:   content,
 		ExpiresAt: time.Now().Add(d),
+		UserData:  userData,
 	}
-	ele := c.ll.PushFront(&entry{path, item})
-	c.cache[path] = ele
+	ele := c.ll.PushFront(&entry{uriPath, item})
+	c.cache[uriPath] = ele
 
 	if c.maxEntries > 0 && c.ll.Len() > c.maxEntries {
 		c.removeOldest()
@@ -94,6 +125,11 @@ func (c *Cache) AddItem(path string, content []byte, d time.Duration) {
 // AddItemDefault adds an item using the default cache duration.
 func (c *Cache) AddItemDefault(path string, content []byte) {
 	c.AddItem(path, content, c.defaultTimeout)
+}
+
+// SetItem adds or updates an item using the default cache duration.
+func (c *Cache) SetItem(path string, data []byte) {
+	c.AddItem(path, data, c.defaultTimeout)
 }
 
 // RemoveItem deletes a specific item by its path.
